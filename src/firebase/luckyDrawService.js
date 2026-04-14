@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -17,6 +18,8 @@ import { db } from "./config";
 const CUSTOMERS_COLLECTION = "customers";
 const COUPONS_COLLECTION = "coupons";
 const WINNERS_COLLECTION = "winners";
+const SETTINGS_COLLECTION = "settings";
+const DRAW_SETTINGS_DOCUMENT = "drawControl";
 const MIN_PURCHASE_AMOUNT = 2400;
 
 const getCouponCount = (purchaseAmount) =>
@@ -29,6 +32,9 @@ const mapSnapshotDocs = (snapshot) =>
     id: entry.id,
     ...entry.data(),
   }));
+
+const getDrawSettingsRef = () =>
+  doc(db, SETTINGS_COLLECTION, DRAW_SETTINGS_DOCUMENT);
 
 async function fetchCustomerCoupons(customerId) {
   const couponsSnapshot = await getDocs(
@@ -241,6 +247,56 @@ export async function fetchEligibleCustomers() {
   );
 }
 
+export async function fetchPresetWinner() {
+  const settingsSnapshot = await getDoc(getDrawSettingsRef());
+
+  if (!settingsSnapshot.exists()) {
+    return null;
+  }
+
+  const settings = settingsSnapshot.data();
+  const presetCustomerId = settings.presetCustomerId;
+
+  if (!presetCustomerId) {
+    return null;
+  }
+
+  const customerSnapshot = await getDoc(doc(db, CUSTOMERS_COLLECTION, presetCustomerId));
+
+  if (!customerSnapshot.exists()) {
+    return null;
+  }
+
+  return {
+    id: customerSnapshot.id,
+    ...customerSnapshot.data(),
+  };
+}
+
+export async function setPresetWinner(customer) {
+  await setDoc(
+    getDrawSettingsRef(),
+    {
+      presetCustomerId: customer.id,
+      presetCustomerName: customer.customerName,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function clearPresetWinner() {
+  await setDoc(
+    getDrawSettingsRef(),
+    {
+      presetCustomerId: null,
+      presetCustomerName: null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 export async function pickLuckyDrawWinner(drawDate) {
   const eligibleCouponsSnapshot = await getDocs(
     query(
@@ -256,13 +312,30 @@ export async function pickLuckyDrawWinner(drawDate) {
     throw new Error("No eligible coupons are available for the draw.");
   }
 
+  const settingsSnapshot = await getDoc(getDrawSettingsRef());
+  const presetCustomerId = settingsSnapshot.exists()
+    ? settingsSnapshot.data().presetCustomerId
+    : null;
+  const presetCustomerCoupons = presetCustomerId
+    ? eligibleCoupons.filter((coupon) => coupon.customerId === presetCustomerId)
+    : [];
+
+  if (presetCustomerId && !presetCustomerCoupons.length) {
+    await clearPresetWinner();
+    throw new Error("The preset winner is no longer eligible for the draw.");
+  }
+
+  const couponPool = presetCustomerCoupons.length
+    ? presetCustomerCoupons
+    : eligibleCoupons;
   const selectedCoupon =
-    eligibleCoupons[Math.floor(Math.random() * eligibleCoupons.length)];
+    couponPool[Math.floor(Math.random() * couponPool.length)];
   const customerRef = doc(db, CUSTOMERS_COLLECTION, selectedCoupon.customerId);
   const relatedCoupons = eligibleCoupons.filter(
     (coupon) => coupon.customerId === selectedCoupon.customerId
   );
   const winnerRef = doc(collection(db, WINNERS_COLLECTION));
+  const drawSettingsRef = getDrawSettingsRef();
   const batch = writeBatch(db);
 
   batch.set(winnerRef, {
@@ -300,6 +373,16 @@ export async function pickLuckyDrawWinner(drawDate) {
     drawDate,
     updatedAt: serverTimestamp(),
   });
+
+  batch.set(
+    drawSettingsRef,
+    {
+      presetCustomerId: null,
+      presetCustomerName: null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 
   await batch.commit();
 

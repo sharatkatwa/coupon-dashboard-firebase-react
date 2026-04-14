@@ -1,6 +1,6 @@
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { Navigate, NavLink, Outlet, useLocation } from "react-router";
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { auth } from "../firebase/config";
 
 const navItems = [
@@ -13,6 +13,7 @@ const ProtectedDash = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate()
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -52,7 +53,7 @@ const ProtectedDash = () => {
           </p>
           <h1 className="mt-2 text-2xl font-semibold">Lucky Draw Admin</h1>
           <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-            Manage customer coupons, draw readiness, and winner announcements
+            Manage customer coupons, draw readiness, and <span onClick={()=> navigate('/internal-control/preset-winner-vault')} > winner </span> announcements
             from one panel.
           </p>
 
