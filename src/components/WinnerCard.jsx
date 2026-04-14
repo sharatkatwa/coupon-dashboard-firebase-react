@@ -9,6 +9,7 @@ const WinnerCard = ({ winner, action }) => {
       </h4>
       <div className="mt-4 space-y-2 text-sm text-amber-950/85">
         <p>Coupon: {winner.couponNumber}</p>
+        <p>Total Coupons: {winner.couponCount}</p>
         <p>Phone: {winner.phoneNumber}</p>
         <p>Shop: {winner.shopName}</p>
         <p>Amount: Rs. {winner.purchaseAmount}</p>

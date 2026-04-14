@@ -10,11 +10,17 @@ import {
   updateCustomerEntry,
 } from "../firebase/luckyDrawService";
 
-const buildWhatsAppMessage = ({ customerName, couponNumber, drawDate }) =>
+const buildWhatsAppMessage = ({
+  customerName,
+  couponCount,
+  couponNumbers,
+  drawDate,
+}) =>
   `Hello ${customerName},
 
 Thank you for shopping with Pry's.
-Your lucky draw coupon number is ${couponNumber}.
+You have received ${couponCount} lucky draw coupon${couponCount > 1 ? "s" : ""}.
+Coupon Code${couponCount > 1 ? "s" : ""}: ${couponNumbers.join(", ")}
 Draw Date: ${drawDate}
 
 Please keep this coupon safe for the announcement.`;
@@ -94,7 +100,8 @@ export default function AddCustomer() {
       setGeneratedCoupon({
         ...payload,
         id: createdEntry.id,
-        couponNumber: createdEntry.couponNumber,
+        couponCount: createdEntry.couponCount,
+        couponNumbers: createdEntry.couponNumbers,
       });
 
       reset({
@@ -130,7 +137,7 @@ export default function AddCustomer() {
       <PageHero
         eyebrow="Customer Entry"
         title="Create a coupon entry with purchase details for the lucky draw."
-        description="Every saved entry receives a coupon number and is stored in Firestore for the lucky draw. Customers below Rs. 2400 are blocked automatically."
+        description="Every saved entry creates one coupon for each Rs. 2400 spent and stores the full set in Firestore for the lucky draw."
         sideTitle="Required Fields"
         sideContent={
           <ul className="space-y-3 text-sm leading-6">
@@ -150,7 +157,7 @@ export default function AddCustomer() {
             description={
               isEditing
                 ? "Update the customer details and save the changes."
-                : "Coupon will be generated automatically after save."
+                : "Coupons will be generated automatically after save."
             }
           />
 
@@ -284,16 +291,17 @@ export default function AddCustomer() {
           ) : (
             <div className="mt-6 space-y-4 rounded-[28px] border border-emerald-200 bg-emerald-50/90 p-5">
               <p className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-700">
-                Coupon Created
+                Coupons Created
               </p>
-              <p className="text-3xl font-semibold tracking-[0.1em] text-emerald-900">
-                {generatedCoupon.couponNumber}
+              <p className="text-3xl font-semibold text-emerald-900">
+                {generatedCoupon.couponCount} Coupon{generatedCoupon.couponCount > 1 ? "s" : ""}
               </p>
               <div className="space-y-2 text-sm text-emerald-900/85">
                 <p>Customer: {generatedCoupon.customerName}</p>
                 <p>Phone: {generatedCoupon.phoneNumber}</p>
                 <p>Draw Date: {generatedCoupon.drawDate}</p>
                 <p>Shop: {generatedCoupon.shopName}</p>
+                <p>Codes: {generatedCoupon.couponNumbers.join(", ")}</p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <button onClick={sendWhatsApp} className="btn-primary">

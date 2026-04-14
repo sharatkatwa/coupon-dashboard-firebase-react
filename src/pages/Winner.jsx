@@ -93,7 +93,7 @@ const Winner = () => {
       <PageHero
         eyebrow="Lucky Draw"
         title="Pick one winner automatically from all qualified customers."
-        description="The selected winner is stored in Firestore and removed from the eligible list so the same coupon is not picked again."
+        description="The selected winner is drawn from all active coupons, so bigger purchases create more chances without allowing repeat winners."
         sideTitle="Draw Controls"
         sideContent={
           <>
@@ -147,7 +147,7 @@ const Winner = () => {
         <article className="panel-card p-6">
           <SectionHeader
             title="Eligible Customers"
-            description="Customers with purchase amount of Rs. 2400 or more and no winner flag yet."
+            description="Customers with active coupons available for the draw."
           />
 
           <div className="mt-6 space-y-3">
@@ -158,7 +158,13 @@ const Winner = () => {
                 <CustomerEntryCard
                   key={customer.id}
                   customer={customer}
-                  meta={<p>Amount: Rs. {customer.purchaseAmount}</p>}
+                  badgeLabel={`${customer.couponCount || 0} Coupons`}
+                  meta={
+                    <>
+                      <p>Amount: Rs. {customer.purchaseAmount}</p>
+                      <p>Coupon Chances: {customer.couponCount || 0}</p>
+                    </>
+                  }
                 />
               ))
             )}

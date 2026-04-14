@@ -1,40 +1,95 @@
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   getCountFromServer,
+  getDoc,
   getDocs,
   limit,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
 
 const CUSTOMERS_COLLECTION = "customers";
+const COUPONS_COLLECTION = "coupons";
 const WINNERS_COLLECTION = "winners";
+const MIN_PURCHASE_AMOUNT = 2400;
+
+const getCouponCount = (purchaseAmount) =>
+  Math.floor(Number(purchaseAmount) / MIN_PURCHASE_AMOUNT);
+
+const createCouponNumber = (couponId) => `PRYS-${couponId.slice(0, 6).toUpperCase()}`;
+
+const mapSnapshotDocs = (snapshot) =>
+  snapshot.docs.map((entry) => ({
+    id: entry.id,
+    ...entry.data(),
+  }));
+
+async function fetchCustomerCoupons(customerId) {
+  const couponsSnapshot = await getDocs(
+    query(
+      collection(db, COUPONS_COLLECTION),
+      where("customerId", "==", customerId)
+    )
+  );
+
+  return mapSnapshotDocs(couponsSnapshot);
+}
 
 export async function createCustomerEntry(payload) {
-  const customerRef = doc(collection(db, CUSTOMERS_COLLECTION));
-  const couponNumber = `PRYS-${customerRef.id.slice(0, 6).toUpperCase()}`;
+  const purchaseAmount = Number(payload.purchaseAmount);
+  const couponCount = getCouponCount(purchaseAmount);
 
-  await runTransaction(db, async (transaction) => {
-    transaction.set(customerRef, {
-      ...payload,
-      couponNumber,
+  if (couponCount < 1) {
+    throw new Error("Minimum purchase amount should be Rs. 2400.");
+  }
+
+  const customerRef = doc(collection(db, CUSTOMERS_COLLECTION));
+  const couponRefs = Array.from({ length: couponCount }, () =>
+    doc(collection(db, COUPONS_COLLECTION))
+  );
+  const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
+  const batch = writeBatch(db);
+
+  batch.set(customerRef, {
+    ...payload,
+    purchaseAmount,
+    couponCount,
+    couponNumbers,
+    winner: false,
+    whatsappSent: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  couponRefs.forEach((couponRef, index) => {
+    batch.set(couponRef, {
+      customerId: customerRef.id,
+      customerName: payload.customerName,
+      phoneNumber: payload.phoneNumber,
+      shopName: payload.shopName,
+      purchaseAmount,
+      drawDate: payload.drawDate,
+      couponNumber: couponNumbers[index],
+      couponIndex: index + 1,
+      active: true,
       winner: false,
-      whatsappSent: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
   });
 
+  await batch.commit();
+
   return {
     id: customerRef.id,
-    couponNumber,
+    couponCount,
+    couponNumbers,
   };
 }
 
@@ -48,16 +103,81 @@ export async function markWhatsAppSent(customerId) {
 
 export async function updateCustomerEntry(customerId, payload) {
   const customerRef = doc(db, CUSTOMERS_COLLECTION, customerId);
-  await updateDoc(customerRef, {
+  const customerSnapshot = await getDoc(customerRef);
+
+  if (!customerSnapshot.exists()) {
+    throw new Error("Customer entry no longer exists.");
+  }
+
+  const customerData = customerSnapshot.data();
+
+  if (customerData.winner) {
+    throw new Error("Winner entries cannot be edited.");
+  }
+
+  const purchaseAmount = Number(payload.purchaseAmount);
+  const couponCount = getCouponCount(purchaseAmount);
+
+  if (couponCount < 1) {
+    throw new Error("Minimum purchase amount should be Rs. 2400.");
+  }
+
+  const existingCoupons = await fetchCustomerCoupons(customerId);
+  const batch = writeBatch(db);
+
+  existingCoupons.forEach((coupon) => {
+    batch.delete(doc(db, COUPONS_COLLECTION, coupon.id));
+  });
+
+  const couponRefs = Array.from({ length: couponCount }, () =>
+    doc(collection(db, COUPONS_COLLECTION))
+  );
+  const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
+
+  batch.update(customerRef, {
     ...payload,
-    purchaseAmount: Number(payload.purchaseAmount),
+    purchaseAmount,
+    couponCount,
+    couponNumbers,
     updatedAt: serverTimestamp(),
   });
+
+  couponRefs.forEach((couponRef, index) => {
+    batch.set(couponRef, {
+      customerId,
+      customerName: payload.customerName,
+      phoneNumber: payload.phoneNumber,
+      shopName: payload.shopName,
+      purchaseAmount,
+      drawDate: payload.drawDate,
+      couponNumber: couponNumbers[index],
+      couponIndex: index + 1,
+      active: true,
+      winner: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+
+  return {
+    id: customerId,
+    couponCount,
+    couponNumbers,
+  };
 }
 
 export async function deleteCustomerEntry(customerId) {
-  const customerRef = doc(db, CUSTOMERS_COLLECTION, customerId);
-  await deleteDoc(customerRef);
+  const coupons = await fetchCustomerCoupons(customerId);
+  const batch = writeBatch(db);
+
+  coupons.forEach((coupon) => {
+    batch.delete(doc(db, COUPONS_COLLECTION, coupon.id));
+  });
+  batch.delete(doc(db, CUSTOMERS_COLLECTION, customerId));
+
+  await batch.commit();
 }
 
 export async function fetchDashboardSnapshot() {
@@ -66,7 +186,6 @@ export async function fetchDashboardSnapshot() {
     orderBy("createdAt", "desc"),
     limit(8)
   );
-  const allCustomersQuery = collection(db, CUSTOMERS_COLLECTION);
   const winnersQuery = query(
     collection(db, WINNERS_COLLECTION),
     orderBy("createdAt", "desc"),
@@ -75,33 +194,29 @@ export async function fetchDashboardSnapshot() {
 
   const [
     customersSnapshot,
-    allCustomersSnapshot,
     winnersSnapshot,
     totalCustomers,
     totalWinners,
+    totalCoupons,
+    qualifiedCustomersSnapshot,
   ] = await Promise.all([
     getDocs(customersQuery),
-    getDocs(allCustomersQuery),
     getDocs(winnersQuery),
     getCountFromServer(collection(db, CUSTOMERS_COLLECTION)),
     getCountFromServer(collection(db, WINNERS_COLLECTION)),
+    getCountFromServer(collection(db, COUPONS_COLLECTION)),
+    getDocs(
+      query(
+        collection(db, CUSTOMERS_COLLECTION),
+        where("winner", "==", false)
+      )
+    ),
   ]);
 
-  const customers = customersSnapshot.docs.map((entry) => ({
-    id: entry.id,
-    ...entry.data(),
-  }));
-  const allCustomers = allCustomersSnapshot.docs.map((entry) => ({
-    id: entry.id,
-    ...entry.data(),
-  }));
-  const winners = winnersSnapshot.docs.map((entry) => ({
-    id: entry.id,
-    ...entry.data(),
-  }));
-  const qualifiedCustomers = allCustomers.filter(
-    (customer) =>
-      Number(customer.purchaseAmount) >= 2400 && customer.winner !== true
+  const customers = mapSnapshotDocs(customersSnapshot);
+  const winners = mapSnapshotDocs(winnersSnapshot);
+  const qualifiedCustomers = qualifiedCustomersSnapshot.docs.filter(
+    (entry) => Number(entry.data().purchaseAmount) >= MIN_PURCHASE_AMOUNT
   ).length;
 
   return {
@@ -110,6 +225,7 @@ export async function fetchDashboardSnapshot() {
     metrics: {
       totalCustomers: totalCustomers.data().count,
       totalWinners: totalWinners.data().count,
+      totalCoupons: totalCoupons.data().count,
       qualifiedCustomers,
     },
   };
@@ -120,45 +236,76 @@ export async function fetchEligibleCustomers() {
     query(collection(db, CUSTOMERS_COLLECTION), orderBy("createdAt", "desc"))
   );
 
-  return snapshot.docs
-    .map((entry) => ({
-      id: entry.id,
-      ...entry.data(),
-    }))
-    .filter(
-      (customer) =>
-        Number(customer.purchaseAmount) >= 2400 && customer.winner !== true
-    );
+  return mapSnapshotDocs(snapshot).filter(
+    (customer) => Number(customer.purchaseAmount) >= MIN_PURCHASE_AMOUNT && customer.winner !== true
+  );
 }
 
 export async function pickLuckyDrawWinner(drawDate) {
-  const eligibleCustomers = await fetchEligibleCustomers();
+  const eligibleCouponsSnapshot = await getDocs(
+    query(
+      collection(db, COUPONS_COLLECTION),
+      where("active", "==", true),
+      where("winner", "==", false)
+    )
+  );
 
-  if (!eligibleCustomers.length) {
-    throw new Error("No eligible customers are available for the draw.");
+  const eligibleCoupons = mapSnapshotDocs(eligibleCouponsSnapshot);
+
+  if (!eligibleCoupons.length) {
+    throw new Error("No eligible coupons are available for the draw.");
   }
 
-  const selectedCustomer =
-    eligibleCustomers[Math.floor(Math.random() * eligibleCustomers.length)];
+  const selectedCoupon =
+    eligibleCoupons[Math.floor(Math.random() * eligibleCoupons.length)];
+  const customerRef = doc(db, CUSTOMERS_COLLECTION, selectedCoupon.customerId);
+  const relatedCoupons = eligibleCoupons.filter(
+    (coupon) => coupon.customerId === selectedCoupon.customerId
+  );
+  const winnerRef = doc(collection(db, WINNERS_COLLECTION));
+  const batch = writeBatch(db);
 
-  const winnerRecord = {
-    customerId: selectedCustomer.id,
-    customerName: selectedCustomer.customerName,
-    phoneNumber: selectedCustomer.phoneNumber,
-    couponNumber: selectedCustomer.couponNumber,
-    shopName: selectedCustomer.shopName,
-    purchaseAmount: Number(selectedCustomer.purchaseAmount),
+  batch.set(winnerRef, {
+    customerId: selectedCoupon.customerId,
+    customerName: selectedCoupon.customerName,
+    phoneNumber: selectedCoupon.phoneNumber,
+    couponNumber: selectedCoupon.couponNumber,
+    couponCount: relatedCoupons.length,
+    shopName: selectedCoupon.shopName,
+    purchaseAmount: Number(selectedCoupon.purchaseAmount),
     drawDate,
     createdAt: serverTimestamp(),
-  };
+  });
 
-  await addDoc(collection(db, WINNERS_COLLECTION), winnerRecord);
-  await updateDoc(doc(db, CUSTOMERS_COLLECTION, selectedCustomer.id), {
+  batch.update(doc(db, COUPONS_COLLECTION, selectedCoupon.id), {
     winner: true,
-    winnerDeclaredAt: serverTimestamp(),
+    active: false,
     drawDate,
     updatedAt: serverTimestamp(),
   });
 
-  return selectedCustomer;
+  relatedCoupons
+    .filter((coupon) => coupon.id !== selectedCoupon.id)
+    .forEach((coupon) => {
+      batch.update(doc(db, COUPONS_COLLECTION, coupon.id), {
+        active: false,
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+  batch.update(customerRef, {
+    winner: true,
+    winnerDeclaredAt: serverTimestamp(),
+    winningCouponNumber: selectedCoupon.couponNumber,
+    drawDate,
+    updatedAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  return {
+    ...selectedCoupon,
+    drawDate,
+    couponCount: relatedCoupons.length,
+  };
 }

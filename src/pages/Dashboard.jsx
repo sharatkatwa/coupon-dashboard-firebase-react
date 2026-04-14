@@ -17,12 +17,17 @@ const metricCards = [
   {
     key: "totalCustomers",
     label: "Total Entries",
-    helper: "All customer coupons stored",
+    helper: "Customer records stored",
   },
   {
     key: "qualifiedCustomers",
     label: "Eligible For Draw",
-    helper: "Purchase amount is Rs. 2400 or more",
+    helper: "Customers still active in the campaign",
+  },
+  {
+    key: "totalCoupons",
+    label: "Total Coupons",
+    helper: "All coupon chances generated",
   },
   {
     key: "totalWinners",
@@ -45,11 +50,17 @@ const formatDate = (value) => {
   }).format(date);
 };
 
-const buildWhatsAppMessage = ({ customerName, couponNumber, drawDate }) =>
+const buildWhatsAppMessage = ({
+  customerName,
+  couponNumbers = [],
+  couponCount = 0,
+  drawDate,
+}) =>
   `Hello ${customerName},
 
 Thank you for shopping with Pry's.
-Your lucky draw coupon number is ${couponNumber}.
+You have received ${couponCount} lucky draw coupon${couponCount > 1 ? "s" : ""}.
+Coupon Code${couponCount > 1 ? "s" : ""}: ${couponNumbers.join(", ")}
 Draw Date: ${drawDate}
 
 Please keep this coupon safe for the announcement.`;
@@ -62,6 +73,7 @@ const Dashboard = () => {
     metrics: {
       totalCustomers: 0,
       qualifiedCustomers: 0,
+      totalCoupons: 0,
       totalWinners: 0,
     },
   });
@@ -165,7 +177,7 @@ const Dashboard = () => {
 
       {error && <div className="status-error">{error}</div>}
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((metric) => (
           <MetricCard
             key={metric.key}
@@ -196,6 +208,7 @@ const Dashboard = () => {
                 <CustomerEntryCard
                   key={customer.id}
                   customer={customer}
+                  badgeLabel={`${customer.couponCount || 0} Coupons`}
                   menuActions={[
                     {
                       label: "Edit Entry",
@@ -227,9 +240,10 @@ const Dashboard = () => {
                   ]}
                   meta={
                     <>
-                    <span>Rs. {Number(customer.purchaseAmount || 0)}</span>
-                    <span>{formatDate(customer.createdAt)}</span>
-                    <span>{customer.winner ? "Winner Declared" : "Pending"}</span>
+                      <span>Rs. {Number(customer.purchaseAmount || 0)}</span>
+                      <span>{customer.couponCount || 0} coupons</span>
+                      <span>{formatDate(customer.createdAt)}</span>
+                      <span>{customer.winner ? "Winner Declared" : "Pending"}</span>
                     </>
                   }
                 />
@@ -252,7 +266,13 @@ const Dashboard = () => {
                 <CustomerEntryCard
                   key={winner.id}
                   customer={winner}
-                  meta={<p>Draw Date: {winner.drawDate || "Not set"}</p>}
+                  badgeLabel={winner.couponNumber}
+                  meta={
+                    <>
+                      <p>Draw Date: {winner.drawDate || "Not set"}</p>
+                      <p>Total Coupons: {winner.couponCount || 1}</p>
+                    </>
+                  }
                 />
               ))
             )}

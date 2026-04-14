@@ -8,7 +8,12 @@ const iconMap = {
   sent: CircleCheck,
 };
 
-const CustomerEntryCard = ({ customer, meta, menuActions = [] }) => {
+const CustomerEntryCard = ({
+  customer,
+  meta,
+  menuActions = [],
+  badgeLabel,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -38,7 +43,7 @@ const CustomerEntryCard = ({ customer, meta, menuActions = [] }) => {
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-[var(--card-strong)] px-3 py-1 text-xs font-semibold tracking-[0.18em] text-[var(--muted)]">
-            {customer.couponNumber}
+            {badgeLabel || customer.couponNumber || `${customer.couponCount || 0} Coupons`}
           </span>
 
           {menuActions.length > 0 ? (
