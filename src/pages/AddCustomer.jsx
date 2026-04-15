@@ -87,6 +87,7 @@ export default function AddCustomer() {
         purchaseAmount,
         shopName: data.shopName.trim(),
         drawDate: data.drawDate,
+        storeImageFile: data.storeImage?.[0],
       };
 
       if (isEditing) {
@@ -102,6 +103,7 @@ export default function AddCustomer() {
         id: createdEntry.id,
         couponCount: createdEntry.couponCount,
         couponNumbers: createdEntry.couponNumbers,
+        storeImageUrl: createdEntry.storeImageUrl || editingCustomer?.storeImageUrl || null,
       });
 
       reset({
@@ -145,7 +147,8 @@ export default function AddCustomer() {
             <li>2. Phone Number</li>
             <li>3. Eligible purchase amount of Rs. 2400 or more</li>
             <li>4. Shop Name</li>
-            <li>5. Draw Date</li>
+            <li>5. Store Image</li>
+            <li>6. Draw Date</li>
           </ul>
         }
       />
@@ -234,6 +237,34 @@ export default function AddCustomer() {
             </label>
 
             <label className="block">
+              <span className="mb-2 block text-sm font-medium">Store Image</span>
+              <input
+                type="file"
+                accept="image/*"
+                {...register("storeImage", {
+                  validate: (value) => {
+                    if (isEditing) {
+                      return true;
+                    }
+
+                    return value?.length
+                      ? true
+                      : "Store image is required";
+                  },
+                })}
+                className="input-field file:mr-4 file:rounded-full file:border-0 file:bg-[var(--card-strong)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[var(--text)]"
+              />
+              {isEditing && editingCustomer?.storeImageUrl ? (
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  Leave this empty to keep the current stored image.
+                </p>
+              ) : null}
+              {errors.storeImage && (
+                <p className="form-error">{errors.storeImage.message}</p>
+              )}
+            </label>
+
+            <label className="block">
               <span className="mb-2 block text-sm font-medium">
                 Draw Date
               </span>
@@ -307,6 +338,16 @@ export default function AddCustomer() {
                 <button onClick={sendWhatsApp} className="btn-primary">
                   Open WhatsApp Message
                 </button>
+                {generatedCoupon.storeImageUrl ? (
+                  <a
+                    href={generatedCoupon.storeImageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary"
+                  >
+                    View Store Image
+                  </a>
+                ) : null}
               </div>
             </div>
           )}

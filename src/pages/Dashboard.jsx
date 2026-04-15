@@ -145,6 +145,14 @@ const Dashboard = () => {
     }
   };
 
+  const handleViewStoreImage = (customer) => {
+    if (!customer.storeImageUrl) {
+      return;
+    }
+
+    window.open(customer.storeImageUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="space-y-6">
       <PageHero
@@ -215,6 +223,15 @@ const Dashboard = () => {
                       icon: "edit",
                       onClick: handleEditCustomer,
                     },
+                    ...(customer.storeImageUrl
+                      ? [
+                          {
+                            label: "View Store Image",
+                            icon: "image",
+                            onClick: handleViewStoreImage,
+                          },
+                        ]
+                      : []),
                     {
                       label: customer.whatsappSent
                         ? "Resend WhatsApp"

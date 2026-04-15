@@ -1,4 +1,5 @@
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useLocation, useNavigate } from "react-router";
@@ -9,6 +10,7 @@ const AdminLogin = () => {
   const location = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const {
     register,
     handleSubmit,
@@ -88,14 +90,24 @@ const AdminLogin = () => {
 
               <label className="block">
                 <span className="mb-2 block text-sm font-medium">Password</span>
-                <input
-                  type="password"
-                  placeholder="Enter password"
-                  className="input-field"
-                  {...register("password", {
-                    required: "Password is required",
-                  })}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter password"
+                    className="input-field pr-12"
+                    {...register("password", {
+                      required: "Password is required",
+                    })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((currentValue) => !currentValue)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-[var(--muted)] transition hover:text-[var(--text)]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
                 {errors.password && (
                   <p className="form-error">{errors.password.message}</p>
                 )}

@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
+import { deleteStoreImage, uploadStoreImage } from "./imageUpload";
 
 const CUSTOMERS_COLLECTION = "customers";
 const COUPONS_COLLECTION = "coupons";
@@ -48,6 +49,7 @@ async function fetchCustomerCoupons(customerId) {
 }
 
 export async function createCustomerEntry(payload) {
+  const { storeImageFile, ...customerPayload } = payload;
   const purchaseAmount = Number(payload.purchaseAmount);
   const couponCount = getCouponCount(purchaseAmount);
 
@@ -61,9 +63,13 @@ export async function createCustomerEntry(payload) {
   );
   const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
   const batch = writeBatch(db);
+  const storeImageData = storeImageFile
+    ? await uploadStoreImage(customerRef.id, storeImageFile)
+    : {};
 
   batch.set(customerRef, {
-    ...payload,
+    ...customerPayload,
+    ...storeImageData,
     purchaseAmount,
     couponCount,
     couponNumbers,
@@ -76,11 +82,12 @@ export async function createCustomerEntry(payload) {
   couponRefs.forEach((couponRef, index) => {
     batch.set(couponRef, {
       customerId: customerRef.id,
-      customerName: payload.customerName,
-      phoneNumber: payload.phoneNumber,
-      shopName: payload.shopName,
+      customerName: customerPayload.customerName,
+      phoneNumber: customerPayload.phoneNumber,
+      shopName: customerPayload.shopName,
       purchaseAmount,
-      drawDate: payload.drawDate,
+      drawDate: customerPayload.drawDate,
+      storeImageUrl: storeImageData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
       active: true,
@@ -96,6 +103,7 @@ export async function createCustomerEntry(payload) {
     id: customerRef.id,
     couponCount,
     couponNumbers,
+    ...storeImageData,
   };
 }
 
@@ -108,6 +116,7 @@ export async function markWhatsAppSent(customerId) {
 }
 
 export async function updateCustomerEntry(customerId, payload) {
+  const { storeImageFile, ...customerPayload } = payload;
   const customerRef = doc(db, CUSTOMERS_COLLECTION, customerId);
   const customerSnapshot = await getDoc(customerRef);
 
@@ -121,7 +130,7 @@ export async function updateCustomerEntry(customerId, payload) {
     throw new Error("Winner entries cannot be edited.");
   }
 
-  const purchaseAmount = Number(payload.purchaseAmount);
+  const purchaseAmount = Number(customerPayload.purchaseAmount);
   const couponCount = getCouponCount(purchaseAmount);
 
   if (couponCount < 1) {
@@ -130,6 +139,15 @@ export async function updateCustomerEntry(customerId, payload) {
 
   const existingCoupons = await fetchCustomerCoupons(customerId);
   const batch = writeBatch(db);
+  let storeImageData = {};
+
+  if (storeImageFile) {
+    storeImageData = await uploadStoreImage(customerId, storeImageFile);
+
+    if (customerData.storeImagePath) {
+      await deleteStoreImage(customerData.storeImagePath);
+    }
+  }
 
   existingCoupons.forEach((coupon) => {
     batch.delete(doc(db, COUPONS_COLLECTION, coupon.id));
@@ -141,7 +159,8 @@ export async function updateCustomerEntry(customerId, payload) {
   const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
 
   batch.update(customerRef, {
-    ...payload,
+    ...customerPayload,
+    ...storeImageData,
     purchaseAmount,
     couponCount,
     couponNumbers,
@@ -151,11 +170,12 @@ export async function updateCustomerEntry(customerId, payload) {
   couponRefs.forEach((couponRef, index) => {
     batch.set(couponRef, {
       customerId,
-      customerName: payload.customerName,
-      phoneNumber: payload.phoneNumber,
-      shopName: payload.shopName,
+      customerName: customerPayload.customerName,
+      phoneNumber: customerPayload.phoneNumber,
+      shopName: customerPayload.shopName,
       purchaseAmount,
-      drawDate: payload.drawDate,
+      drawDate: customerPayload.drawDate,
+      storeImageUrl: storeImageData.storeImageUrl || customerData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
       active: true,
@@ -171,10 +191,12 @@ export async function updateCustomerEntry(customerId, payload) {
     id: customerId,
     couponCount,
     couponNumbers,
+    ...storeImageData,
   };
 }
 
 export async function deleteCustomerEntry(customerId) {
+  const customerSnapshot = await getDoc(doc(db, CUSTOMERS_COLLECTION, customerId));
   const coupons = await fetchCustomerCoupons(customerId);
   const batch = writeBatch(db);
 
@@ -184,6 +206,10 @@ export async function deleteCustomerEntry(customerId) {
   batch.delete(doc(db, CUSTOMERS_COLLECTION, customerId));
 
   await batch.commit();
+
+  if (customerSnapshot.exists()) {
+    await deleteStoreImage(customerSnapshot.data().storeImagePath);
+  }
 }
 
 export async function fetchDashboardSnapshot() {

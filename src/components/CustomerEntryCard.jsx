@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleCheck, MessageCircle, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import {
+  CircleCheck,
+  Image,
+  MessageCircle,
+  MoreVertical,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
 const iconMap = {
   edit: Pencil,
   delete: Trash2,
   whatsapp: MessageCircle,
   sent: CircleCheck,
+  image: Image,
 };
 
 const CustomerEntryCard = ({

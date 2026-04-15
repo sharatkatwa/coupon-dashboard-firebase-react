@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const getRequiredEnv = (key) => {
   const value = import.meta.env[key];
@@ -16,7 +17,7 @@ const firebaseConfig = {
   apiKey: getRequiredEnv("VITE_FIREBASE_API_KEY"),
   authDomain: getRequiredEnv("VITE_FIREBASE_AUTH_DOMAIN"),
   projectId: getRequiredEnv("VITE_FIREBASE_PROJECT_ID"),
-  // storageBucket: getRequiredEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  storageBucket: getRequiredEnv("VITE_FIREBASE_STORAGE_BUCKET"),
   messagingSenderId: getRequiredEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
   appId: getRequiredEnv("VITE_FIREBASE_APP_ID"),
 };
@@ -27,3 +28,4 @@ export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true,
   ignoreUndefinedProperties: true,
 });
+export const storage = getStorage(app);
