@@ -2,9 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   CircleCheck,
   Image,
+  
+  MapPin,
   MessageCircle,
   MoreVertical,
   Pencil,
+  Phone,
+  Store,
   Trash2,
 } from "lucide-react";
 
@@ -42,16 +46,22 @@ const CustomerEntryCard = ({
 
   return (
     <div className="rounded-3xl border border-[var(--line)] bg-[var(--card)] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-base font-semibold">{customer.customerName}</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {customer.phoneNumber} | {customer.shopName}
+          <p className="mt-1 flex items-center flex-wrap gap-2 text-sm text-[var(--muted)] text-nowrap">
+            <span className="flex items-center gap-1"><Phone size={15}/> {customer.phoneNumber}</span> |<span className="flex items-center gap-1"><Store size={15}/> {customer.shopName}</span>
           </p>
+          
+          {customer.storeAddress ? (
+            <p className="mt-1  max-w-70 text-sm text-[var(--muted)]" title={customer.storeAddress}>
+            <MapPin size={15} className="inline" />  {customer.storeAddress}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-[var(--card-strong)] px-3 py-1 text-xs font-semibold tracking-[0.18em] text-[var(--muted)]">
-            {badgeLabel || customer.couponNumber || `${customer.couponCount || 0} Coupons`}
+          <span className="rounded-full bg-[var(--card-strong)] px-3 py-1 text-xs font-semibold tracking-[0.18em] text-[var(--muted)] text-nowrap">
+            {badgeLabel || `${customer.couponCount || 0} Coupons`}
           </span>
 
           {menuActions.length > 0 ? (

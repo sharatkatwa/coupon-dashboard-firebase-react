@@ -4,18 +4,9 @@ import EmptyStateCard from "../components/EmptyStateCard";
 import PageHero from "../components/PageHero";
 import SectionHeader from "../components/SectionHeader";
 import { useLocation, useNavigate } from "react-router";
-import {
-  createCustomerEntry,
-  markWhatsAppSent,
-  updateCustomerEntry,
-} from "../firebase/luckyDrawService";
+import { createCustomerEntry, markWhatsAppSent, updateCustomerEntry } from "../firebase/luckyDrawService";
 
-const buildWhatsAppMessage = ({
-  customerName,
-  couponCount,
-  couponNumbers,
-  drawDate,
-}) =>
+const buildWhatsAppMessage = ({ customerName, couponCount, couponNumbers, drawDate }) =>
   `Hello ${customerName},
 
 Thank you for shopping with Pry's.
@@ -45,6 +36,7 @@ export default function AddCustomer() {
       phoneNumber: "",
       purchaseAmount: "",
       shopName: "",
+      storeAddress: "",
       drawDate: today,
     },
   });
@@ -56,6 +48,7 @@ export default function AddCustomer() {
         phoneNumber: "",
         purchaseAmount: "",
         shopName: "",
+        storeAddress: "",
         drawDate: today,
       });
       return;
@@ -66,6 +59,7 @@ export default function AddCustomer() {
       phoneNumber: editingCustomer.phoneNumber || "",
       purchaseAmount: editingCustomer.purchaseAmount || "",
       shopName: editingCustomer.shopName || "",
+      storeAddress: editingCustomer.storeAddress || "",
       drawDate: editingCustomer.drawDate || today,
     });
   }, [editingCustomer, isEditing, reset, today]);
@@ -86,6 +80,7 @@ export default function AddCustomer() {
         phoneNumber: data.phoneNumber.trim(),
         purchaseAmount,
         shopName: data.shopName.trim(),
+        storeAddress: data.storeAddress.trim(),
         drawDate: data.drawDate,
         storeImageFile: data.storeImage?.[0],
       };
@@ -111,6 +106,7 @@ export default function AddCustomer() {
         phoneNumber: "",
         purchaseAmount: "",
         shopName: "",
+        storeAddress: "",
         drawDate: today,
       });
     } catch (error) {
@@ -126,9 +122,7 @@ export default function AddCustomer() {
     }
 
     const message = buildWhatsAppMessage(generatedCoupon);
-    const url = `https://wa.me/91${generatedCoupon.phoneNumber}?text=${encodeURIComponent(
-      message
-    )}`;
+    const url = `https://wa.me/91${generatedCoupon.phoneNumber}?text=${encodeURIComponent(message)}`;
 
     window.open(url, "_blank", "noopener,noreferrer");
     await markWhatsAppSent(generatedCoupon.id);
@@ -147,8 +141,9 @@ export default function AddCustomer() {
             <li>2. Phone Number</li>
             <li>3. Eligible purchase amount of Rs. 2400 or more</li>
             <li>4. Shop Name</li>
-            <li>5. Store Image</li>
-            <li>6. Draw Date</li>
+            <li>5. Store Address</li>
+            <li>6. Store Image</li>
+            <li>7. Draw Date</li>
           </ul>
         }
       />
@@ -166,9 +161,7 @@ export default function AddCustomer() {
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Customer Name
-              </span>
+              <span className="mb-2 block text-sm font-medium">Customer Name</span>
               <input
                 {...register("customerName", {
                   required: "Customer name is required",
@@ -176,15 +169,11 @@ export default function AddCustomer() {
                 placeholder="Enter customer name"
                 className="input-field"
               />
-              {errors.customerName && (
-                <p className="form-error">{errors.customerName.message}</p>
-              )}
+              {errors.customerName && <p className="form-error">{errors.customerName.message}</p>}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Phone Number
-              </span>
+              <span className="mb-2 block text-sm font-medium">Phone Number</span>
               <input
                 {...register("phoneNumber", {
                   required: "Phone number is required",
@@ -196,15 +185,11 @@ export default function AddCustomer() {
                 placeholder="9876543210"
                 className="input-field"
               />
-              {errors.phoneNumber && (
-                <p className="form-error">{errors.phoneNumber.message}</p>
-              )}
+              {errors.phoneNumber && <p className="form-error">{errors.phoneNumber.message}</p>}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Purchase Amount
-              </span>
+              <span className="mb-2 block text-sm font-medium">Purchase Amount</span>
               <input
                 type="number"
                 {...register("purchaseAmount", {
@@ -217,9 +202,7 @@ export default function AddCustomer() {
                 placeholder="Greater than or equal to Rs. 2400"
                 className="input-field"
               />
-              {errors.purchaseAmount && (
-                <p className="form-error">{errors.purchaseAmount.message}</p>
-              )}
+              {errors.purchaseAmount && <p className="form-error">{errors.purchaseAmount.message}</p>}
             </label>
 
             <label className="block">
@@ -231,9 +214,24 @@ export default function AddCustomer() {
                 placeholder="Enter shop name"
                 className="input-field"
               />
-              {errors.shopName && (
-                <p className="form-error">{errors.shopName.message}</p>
-              )}
+              {errors.shopName && <p className="form-error">{errors.shopName.message}</p>}
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Store Address</span>
+              <textarea
+                rows="3"
+                {...register("storeAddress", {
+                  required: "Store address is required",
+                  maxLength: {
+                    value: 150,
+                    message: "Store address must be 150 characters or less",
+                  },
+                })}
+                placeholder="Enter full store address"
+                className="input-field resize-y"
+              />
+              {errors.storeAddress && <p className="form-error">{errors.storeAddress.message}</p>}
             </label>
 
             <label className="block">
@@ -247,27 +245,19 @@ export default function AddCustomer() {
                       return true;
                     }
 
-                    return value?.length
-                      ? true
-                      : "Store image is required";
+                    return value?.length ? true : "Store image is required";
                   },
                 })}
                 className="input-field file:mr-4 file:rounded-full file:border-0 file:bg-[var(--card-strong)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[var(--text)]"
               />
               {isEditing && editingCustomer?.storeImageUrl ? (
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                  Leave this empty to keep the current stored image.
-                </p>
+                <p className="mt-2 text-sm text-[var(--muted)]">Leave this empty to keep the current stored image.</p>
               ) : null}
-              {errors.storeImage && (
-                <p className="form-error">{errors.storeImage.message}</p>
-              )}
+              {errors.storeImage && <p className="form-error">{errors.storeImage.message}</p>}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Draw Date
-              </span>
+              <span className="mb-2 block text-sm font-medium">Draw Date</span>
               <input
                 type="date"
                 {...register("drawDate", {
@@ -275,9 +265,7 @@ export default function AddCustomer() {
                 })}
                 className="input-field"
               />
-              {errors.drawDate && (
-                <p className="form-error">{errors.drawDate.message}</p>
-              )}
+              {errors.drawDate && <p className="form-error">{errors.drawDate.message}</p>}
             </label>
 
             {submitError && <div className="status-error">{submitError}</div>}
@@ -293,11 +281,7 @@ export default function AddCustomer() {
                     : "Generate Coupon & Save"}
               </button>
               {isEditing ? (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => navigate("/", { replace: true })}
-                >
+                <button type="button" className="btn-secondary" onClick={() => navigate("/", { replace: true })}>
                   Cancel Edit
                 </button>
               ) : null}
@@ -321,9 +305,7 @@ export default function AddCustomer() {
             </div>
           ) : (
             <div className="mt-6 space-y-4 rounded-[28px] border border-emerald-200 bg-emerald-50/90 p-5">
-              <p className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-700">
-                Coupons Created
-              </p>
+              <p className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-700">Coupons Created</p>
               <p className="text-3xl font-semibold text-emerald-900">
                 {generatedCoupon.couponCount} Coupon{generatedCoupon.couponCount > 1 ? "s" : ""}
               </p>
@@ -332,6 +314,7 @@ export default function AddCustomer() {
                 <p>Phone: {generatedCoupon.phoneNumber}</p>
                 <p>Draw Date: {generatedCoupon.drawDate}</p>
                 <p>Shop: {generatedCoupon.shopName}</p>
+                <p>Address: {generatedCoupon.storeAddress}</p>
                 <p>Codes: {generatedCoupon.couponNumbers.join(", ")}</p>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -339,12 +322,7 @@ export default function AddCustomer() {
                   Open WhatsApp Message
                 </button>
                 {generatedCoupon.storeImageUrl ? (
-                  <a
-                    href={generatedCoupon.storeImageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary"
-                  >
+                  <a href={generatedCoupon.storeImageUrl} target="_blank" rel="noreferrer" className="btn-secondary">
                     View Store Image
                   </a>
                 ) : null}
