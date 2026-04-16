@@ -42,6 +42,12 @@ const getTemplateConfig = (type) => {
   };
 };
 
+const shouldAttachTemplateParameters = (templateName, templateParameters) =>
+  Boolean(templateName) &&
+  templateName !== "hello_world" &&
+  Array.isArray(templateParameters) &&
+  templateParameters.length > 0;
+
 const mapTemplateParameters = (templateParameters = []) =>
   templateParameters.map((parameter) => ({
     type: "text",
@@ -85,13 +91,21 @@ export default async function handler(req, res) {
         language: {
           code: templateConfig.languageCode,
         },
-        components: [
+      };
+
+      if (
+        shouldAttachTemplateParameters(
+          templateConfig.name,
+          templateParameters
+        )
+      ) {
+        requestBody.template.components = [
           {
             type: "body",
             parameters: mapTemplateParameters(templateParameters),
           },
-        ],
-      };
+        ];
+      }
     } else if (fallbackBody) {
       requestBody.type = "text";
       requestBody.text = {
