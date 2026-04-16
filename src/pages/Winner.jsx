@@ -8,15 +8,7 @@ import {
   fetchEligibleCustomers,
   pickLuckyDrawWinner,
 } from "../firebase/luckyDrawService";
-
-const buildWinnerMessage = ({ customerName, couponNumber, drawDate }) =>
-  `Congratulations ${customerName}!
-
-You are the lucky draw winner for Pry's.
-Winning Coupon: ${couponNumber}
-Draw Date: ${drawDate}
-
-Our team will contact you with the prize details.`;
+import { sendWinnerWhatsAppMessage } from "../services/whatsappService";
 
 const Winner = () => {
   const today = new Date().toISOString().slice(0, 10);
@@ -64,10 +56,19 @@ const Winner = () => {
 
     try {
       const winner = await pickLuckyDrawWinner(drawDate);
-      setSelectedWinner({ ...winner, drawDate });
+      const winnerWithDate = { ...winner, drawDate };
+      setSelectedWinner(winnerWithDate);
       setEligibleCustomers((currentCustomers) =>
         currentCustomers.filter((customer) => customer.id !== winner.id)
       );
+
+      try {
+        await sendWinnerWhatsAppMessage(winnerWithDate);
+      } catch (messageError) {
+        setError(
+          `Winner selected, but WhatsApp auto-send failed: ${messageError.message}`
+        );
+      }
     } catch (pickError) {
       setError(pickError.message || "Unable to pick winner right now.");
     } finally {
@@ -75,17 +76,18 @@ const Winner = () => {
     }
   };
 
-  const handleNotifyWinner = () => {
+  const handleNotifyWinner = async () => {
     if (!selectedWinner) {
       return;
     }
 
-    const message = buildWinnerMessage(selectedWinner);
-    const url = `https://wa.me/91${selectedWinner.phoneNumber}?text=${encodeURIComponent(
-      message
-    )}`;
+    setError("");
 
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      await sendWinnerWhatsAppMessage(selectedWinner);
+    } catch (messageError) {
+      setError(messageError.message || "Unable to send winner notification.");
+    }
   };
 
   return (

@@ -12,6 +12,7 @@ import {
   fetchDashboardSnapshot,
   markWhatsAppSent,
 } from "../firebase/luckyDrawService";
+import { sendCustomerWhatsAppMessage } from "../services/whatsappService";
 
 const metricCards = [
   {
@@ -49,21 +50,6 @@ const formatDate = (value) => {
     timeStyle: "short",
   }).format(date);
 };
-
-const buildWhatsAppMessage = ({
-  customerName,
-  couponNumbers = [],
-  couponCount = 0,
-  drawDate,
-}) =>
-  `Hello ${customerName},
-
-Thank you for shopping with Pry's.
-You have received ${couponCount} lucky draw coupon${couponCount > 1 ? "s" : ""}.
-Coupon Code${couponCount > 1 ? "s" : ""}: ${couponNumbers.join(", ")}
-Draw Date: ${drawDate}
-
-Please keep this coupon safe for the announcement.`;
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -130,18 +116,14 @@ const Dashboard = () => {
   };
 
   const handleSendWhatsApp = async (customer) => {
-    const message = buildWhatsAppMessage(customer);
-    const url = `https://wa.me/91${customer.phoneNumber}?text=${encodeURIComponent(
-      message
-    )}`;
-
-    window.open(url, "_blank", "noopener,noreferrer");
+    setError("");
 
     try {
+      await sendCustomerWhatsAppMessage(customer);
       await markWhatsAppSent(customer.id);
       await loadDashboard();
-    } catch {
-      setError("WhatsApp opened, but the sent status could not be updated.");
+    } catch (messageError) {
+      setError(messageError.message || "Unable to send the WhatsApp message right now.");
     }
   };
 

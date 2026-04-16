@@ -5,16 +5,7 @@ import PageHero from "../components/PageHero";
 import SectionHeader from "../components/SectionHeader";
 import { useLocation, useNavigate } from "react-router";
 import { createCustomerEntry, markWhatsAppSent, updateCustomerEntry } from "../firebase/luckyDrawService";
-
-const buildWhatsAppMessage = ({ customerName, couponCount, couponNumbers, drawDate }) =>
-  `Hello ${customerName},
-
-Thank you for shopping with Pry's.
-You have received ${couponCount} lucky draw coupon${couponCount > 1 ? "s" : ""}.
-Coupon Code${couponCount > 1 ? "s" : ""}: ${couponNumbers.join(", ")}
-Draw Date: ${drawDate}
-
-Please keep this coupon safe for the announcement.`;
+import { sendCustomerWhatsAppMessage } from "../services/whatsappService";
 
 export default function AddCustomer() {
   const today = new Date().toISOString().slice(0, 10);
@@ -92,14 +83,24 @@ export default function AddCustomer() {
       }
 
       const createdEntry = await createCustomerEntry(payload);
-
-      setGeneratedCoupon({
+      const createdCustomer = {
         ...payload,
         id: createdEntry.id,
         couponCount: createdEntry.couponCount,
         couponNumbers: createdEntry.couponNumbers,
         storeImageUrl: createdEntry.storeImageUrl || editingCustomer?.storeImageUrl || null,
-      });
+      };
+
+      setGeneratedCoupon(createdCustomer);
+
+      try {
+        await sendCustomerWhatsAppMessage(createdCustomer);
+        await markWhatsAppSent(createdEntry.id);
+      } catch (messageError) {
+        setSubmitError(
+          `Customer saved, but WhatsApp auto-send failed: ${messageError.message}`
+        );
+      }
 
       reset({
         customerName: "",
@@ -121,10 +122,7 @@ export default function AddCustomer() {
       return;
     }
 
-    const message = buildWhatsAppMessage(generatedCoupon);
-    const url = `https://wa.me/91${generatedCoupon.phoneNumber}?text=${encodeURIComponent(message)}`;
-
-    window.open(url, "_blank", "noopener,noreferrer");
+    await sendCustomerWhatsAppMessage(generatedCoupon);
     await markWhatsAppSent(generatedCoupon.id);
   };
 
@@ -292,7 +290,7 @@ export default function AddCustomer() {
         <section className="panel-card p-6">
           <SectionHeader
             title="Latest Generated Coupon"
-            description="After saving, open WhatsApp with a ready-made message for the customer."
+            description="After saving, the app sends the WhatsApp message automatically and lets you resend it if needed."
           />
 
           {isEditing ? (
@@ -319,7 +317,7 @@ export default function AddCustomer() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <button onClick={sendWhatsApp} className="btn-primary">
-                  Open WhatsApp Message
+                  Send WhatsApp Again
                 </button>
                 {generatedCoupon.storeImageUrl ? (
                   <a href={generatedCoupon.storeImageUrl} target="_blank" rel="noreferrer" className="btn-secondary">
