@@ -7,6 +7,7 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -21,7 +22,9 @@ const COUPONS_COLLECTION = "coupons";
 const WINNERS_COLLECTION = "winners";
 const SETTINGS_COLLECTION = "settings";
 const DRAW_SETTINGS_DOCUMENT = "drawControl";
+const BATCH_SETTINGS_DOCUMENT = "customerBatching";
 const MIN_PURCHASE_AMOUNT = 2400;
+const CUSTOMERS_PER_BATCH = 150;
 
 const getCouponCount = (purchaseAmount) =>
   Math.floor(Number(purchaseAmount) / MIN_PURCHASE_AMOUNT);
@@ -36,6 +39,39 @@ const mapSnapshotDocs = (snapshot) =>
 
 const getDrawSettingsRef = () =>
   doc(db, SETTINGS_COLLECTION, DRAW_SETTINGS_DOCUMENT);
+
+const getBatchSettingsRef = () =>
+  doc(db, SETTINGS_COLLECTION, BATCH_SETTINGS_DOCUMENT);
+
+const createBatchLabel = (batchNumber) => `Batch ${batchNumber}`;
+
+async function allocateCustomerBatch() {
+  return runTransaction(db, async (transaction) => {
+    const batchSettingsRef = getBatchSettingsRef();
+    const batchSettingsSnapshot = await transaction.get(batchSettingsRef);
+    const lastCustomerSequence = batchSettingsSnapshot.exists()
+      ? Number(batchSettingsSnapshot.data().lastCustomerSequence || 0)
+      : 0;
+    const customerSequence = lastCustomerSequence + 1;
+    const batchNumber = Math.ceil(customerSequence / CUSTOMERS_PER_BATCH);
+    const batchLabel = createBatchLabel(batchNumber);
+
+    transaction.set(
+      batchSettingsRef,
+      {
+        lastCustomerSequence: customerSequence,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return {
+      customerSequence,
+      batchNumber,
+      batchLabel,
+    };
+  });
+}
 
 async function fetchCustomerCoupons(customerId) {
   const couponsSnapshot = await getDocs(
@@ -58,6 +94,7 @@ export async function createCustomerEntry(payload) {
   }
 
   const customerRef = doc(collection(db, CUSTOMERS_COLLECTION));
+  const batchInfo = await allocateCustomerBatch();
   const couponRefs = Array.from({ length: couponCount }, () =>
     doc(collection(db, COUPONS_COLLECTION))
   );
@@ -73,6 +110,9 @@ export async function createCustomerEntry(payload) {
     purchaseAmount,
     couponCount,
     couponNumbers,
+    customerSequence: batchInfo.customerSequence,
+    batchNumber: batchInfo.batchNumber,
+    batchLabel: batchInfo.batchLabel,
     winner: false,
     whatsappSent: false,
     createdAt: serverTimestamp(),
@@ -87,6 +127,8 @@ export async function createCustomerEntry(payload) {
       shopName: customerPayload.shopName,
       purchaseAmount,
       drawDate: customerPayload.drawDate,
+      batchNumber: batchInfo.batchNumber,
+      batchLabel: batchInfo.batchLabel,
       storeImageUrl: storeImageData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
@@ -103,6 +145,7 @@ export async function createCustomerEntry(payload) {
     id: customerRef.id,
     couponCount,
     couponNumbers,
+    ...batchInfo,
     ...storeImageData,
   };
 }
@@ -140,6 +183,11 @@ export async function updateCustomerEntry(customerId, payload) {
   const existingCoupons = await fetchCustomerCoupons(customerId);
   const batch = writeBatch(db);
   let storeImageData = {};
+  const batchInfo = {
+    customerSequence: customerData.customerSequence || null,
+    batchNumber: customerData.batchNumber || 1,
+    batchLabel: customerData.batchLabel || createBatchLabel(customerData.batchNumber || 1),
+  };
 
   if (storeImageFile) {
     storeImageData = await uploadStoreImage(customerId, storeImageFile);
@@ -164,6 +212,9 @@ export async function updateCustomerEntry(customerId, payload) {
     purchaseAmount,
     couponCount,
     couponNumbers,
+    customerSequence: batchInfo.customerSequence,
+    batchNumber: batchInfo.batchNumber,
+    batchLabel: batchInfo.batchLabel,
     updatedAt: serverTimestamp(),
   });
 
@@ -175,6 +226,8 @@ export async function updateCustomerEntry(customerId, payload) {
       shopName: customerPayload.shopName,
       purchaseAmount,
       drawDate: customerPayload.drawDate,
+      batchNumber: batchInfo.batchNumber,
+      batchLabel: batchInfo.batchLabel,
       storeImageUrl: storeImageData.storeImageUrl || customerData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
@@ -191,6 +244,7 @@ export async function updateCustomerEntry(customerId, payload) {
     id: customerId,
     couponCount,
     couponNumbers,
+    ...batchInfo,
     ...storeImageData,
   };
 }
@@ -273,6 +327,41 @@ export async function fetchEligibleCustomers() {
   );
 }
 
+export async function fetchEligibleCustomersByBatch(batchNumber = "") {
+  const customers = await fetchEligibleCustomers();
+
+  if (!batchNumber) {
+    return customers;
+  }
+
+  return customers.filter(
+    (customer) => String(customer.batchNumber || "") === String(batchNumber)
+  );
+}
+
+export async function fetchEligibleBatches() {
+  const customers = await fetchEligibleCustomers();
+  const batchesMap = new Map();
+
+  customers.forEach((customer) => {
+    if (!customer.batchNumber) {
+      return;
+    }
+
+    if (!batchesMap.has(customer.batchNumber)) {
+      batchesMap.set(customer.batchNumber, {
+        batchNumber: customer.batchNumber,
+        batchLabel:
+          customer.batchLabel || createBatchLabel(customer.batchNumber),
+      });
+    }
+  });
+
+  return Array.from(batchesMap.values()).sort(
+    (firstBatch, secondBatch) => firstBatch.batchNumber - secondBatch.batchNumber
+  );
+}
+
 export async function fetchPresetWinner() {
   const settingsSnapshot = await getDoc(getDrawSettingsRef());
 
@@ -323,7 +412,7 @@ export async function clearPresetWinner() {
   );
 }
 
-export async function pickLuckyDrawWinner(drawDate) {
+export async function pickLuckyDrawWinner(drawDate, selectedBatchNumber = "") {
   const eligibleCouponsSnapshot = await getDocs(
     query(
       collection(db, COUPONS_COLLECTION),
@@ -332,10 +421,18 @@ export async function pickLuckyDrawWinner(drawDate) {
     )
   );
 
-  const eligibleCoupons = mapSnapshotDocs(eligibleCouponsSnapshot);
+  const eligibleCoupons = mapSnapshotDocs(eligibleCouponsSnapshot).filter((coupon) =>
+    selectedBatchNumber
+      ? String(coupon.batchNumber || "") === String(selectedBatchNumber)
+      : true
+  );
 
   if (!eligibleCoupons.length) {
-    throw new Error("No eligible coupons are available for the draw.");
+    throw new Error(
+      selectedBatchNumber
+        ? "No eligible coupons are available in the selected batch."
+        : "No eligible coupons are available for the draw."
+    );
   }
 
   const settingsSnapshot = await getDoc(getDrawSettingsRef());
@@ -370,6 +467,10 @@ export async function pickLuckyDrawWinner(drawDate) {
     phoneNumber: selectedCoupon.phoneNumber,
     couponNumber: selectedCoupon.couponNumber,
     couponCount: relatedCoupons.length,
+    batchNumber: selectedCoupon.batchNumber || null,
+    batchLabel:
+      selectedCoupon.batchLabel ||
+      createBatchLabel(selectedCoupon.batchNumber || 1),
     shopName: selectedCoupon.shopName,
     purchaseAmount: Number(selectedCoupon.purchaseAmount),
     drawDate,
@@ -396,6 +497,7 @@ export async function pickLuckyDrawWinner(drawDate) {
     winner: true,
     winnerDeclaredAt: serverTimestamp(),
     winningCouponNumber: selectedCoupon.couponNumber,
+    winningBatchNumber: selectedCoupon.batchNumber || null,
     drawDate,
     updatedAt: serverTimestamp(),
   });

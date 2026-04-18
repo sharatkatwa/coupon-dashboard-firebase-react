@@ -5,7 +5,8 @@ import PageHero from "../components/PageHero";
 import SectionHeader from "../components/SectionHeader";
 import WinnerCard from "../components/WinnerCard";
 import {
-  fetchEligibleCustomers,
+  fetchEligibleBatches,
+  fetchEligibleCustomersByBatch,
   pickLuckyDrawWinner,
 } from "../firebase/luckyDrawService";
 import {
@@ -16,6 +17,8 @@ import {
 const Winner = () => {
   const today = new Date().toISOString().slice(0, 10);
   const [drawDate, setDrawDate] = useState(today);
+  const [selectedBatchNumber, setSelectedBatchNumber] = useState("");
+  const [availableBatches, setAvailableBatches] = useState([]);
   const [eligibleCustomers, setEligibleCustomers] = useState([]);
   const [selectedWinner, setSelectedWinner] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,10 +34,14 @@ const Winner = () => {
       setError("");
 
       try {
-        const customers = await fetchEligibleCustomers();
+        const [customers, batches] = await Promise.all([
+          fetchEligibleCustomersByBatch(selectedBatchNumber),
+          fetchEligibleBatches(),
+        ]);
 
         if (isMounted) {
           setEligibleCustomers(customers);
+          setAvailableBatches(batches);
         }
       } catch {
         if (isMounted) {
@@ -52,14 +59,14 @@ const Winner = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [selectedBatchNumber]);
 
   const handlePickWinner = async () => {
     setIsPicking(true);
     setError("");
 
     try {
-      const winner = await pickLuckyDrawWinner(drawDate);
+      const winner = await pickLuckyDrawWinner(drawDate, selectedBatchNumber);
       const winnerWithDate = { ...winner, drawDate };
       setSelectedWinner(winnerWithDate);
       setEligibleCustomers((currentCustomers) =>
@@ -139,6 +146,27 @@ const Winner = () => {
                 className="input-field"
               />
             </label>
+            <label className="mt-4 block">
+              <span className="mb-2 block text-sm font-medium">Select Batch</span>
+              <select
+                value={selectedBatchNumber}
+                onChange={(event) => {
+                  setSelectedBatchNumber(event.target.value);
+                  setSelectedWinner(null);
+                }}
+                className="input-field"
+              >
+                <option value="">All Eligible Batches</option>
+                {availableBatches.map((batch) => (
+                  <option
+                    key={batch.batchNumber}
+                    value={String(batch.batchNumber)}
+                  >
+                    {batch.batchLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               className="btn-primary mt-4"
               onClick={handlePickWinner}
@@ -205,6 +233,7 @@ const Winner = () => {
                   badgeLabel={`${customer.couponCount || 0} Coupons`}
                   meta={
                     <>
+                      <p>{customer.batchLabel || `Batch ${customer.batchNumber || 1}`}</p>
                       <p>Amount: Rs. {customer.purchaseAmount}</p>
                       <p>Coupon Chances: {customer.couponCount || 0}</p>
                     </>
