@@ -55,3 +55,16 @@ export async function sendWinnerWhatsAppMessage(winner) {
     fallbackBody: `Hello ${winner.customerName},\n\nYour entry ${winner.couponNumber} has been selected in the draw held on ${winner.drawDate}.\nYou are eligible to receive ${winner.prizeLabel || "the announced prize"}.\nOur team will contact you with further details.\nThank you for participating.`,
   });
 }
+
+export async function sendDrawAnnouncementWhatsAppMessage(customer, winner) {
+  return postWhatsAppMessage({
+    type: "announcement",
+    to: `+91${customer.phoneNumber}`,
+    templateParameters: [
+      customer.customerName,
+      winner.drawDate,
+      winner.couponNumber,
+    ],
+    fallbackBody: `Hello ${customer.customerName},\n\nThe draw conducted on ${winner.drawDate} has concluded.\nThe winning entry number is ${winner.couponNumber}.\nThank you for participating, and we wish you better luck next time.\n\nWe appreciate your support.`,
+  });
+}

@@ -23,13 +23,23 @@ const normalizePhoneNumber = (value) => {
 };
 
 const getTemplateConfig = (type) => {
+  if (type === "announcement") {
+    return {
+      name: process.env.WHATSAPP_ANNOUNCEMENT_TEMPLATE_NAME || "",
+      languageCode:
+        process.env.WHATSAPP_ANNOUNCEMENT_TEMPLATE_LANGUAGE_CODE ||
+        process.env.WHATSAPP_TEMPLATE_LANGUAGE_CODE ||
+        "en",
+    };
+  }
+
   if (type === "winner") {
     return {
       name: process.env.WHATSAPP_WINNER_TEMPLATE_NAME || "",
       languageCode:
         process.env.WHATSAPP_WINNER_TEMPLATE_LANGUAGE_CODE ||
         process.env.WHATSAPP_TEMPLATE_LANGUAGE_CODE ||
-        "en_US",
+        "en",
     };
   }
 
@@ -38,7 +48,7 @@ const getTemplateConfig = (type) => {
     languageCode:
       process.env.WHATSAPP_CUSTOMER_TEMPLATE_LANGUAGE_CODE ||
       process.env.WHATSAPP_TEMPLATE_LANGUAGE_CODE ||
-      "en_US",
+      "en",
   };
 };
 

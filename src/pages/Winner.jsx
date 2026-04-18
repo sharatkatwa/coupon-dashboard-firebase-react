@@ -8,7 +8,10 @@ import {
   fetchEligibleCustomers,
   pickLuckyDrawWinner,
 } from "../firebase/luckyDrawService";
-import { sendWinnerWhatsAppMessage } from "../services/whatsappService";
+import {
+  sendDrawAnnouncementWhatsAppMessage,
+  sendWinnerWhatsAppMessage,
+} from "../services/whatsappService";
 
 const Winner = () => {
   const today = new Date().toISOString().slice(0, 10);
@@ -17,6 +20,7 @@ const Winner = () => {
   const [selectedWinner, setSelectedWinner] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPicking, setIsPicking] = useState(false);
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -90,6 +94,33 @@ const Winner = () => {
     }
   };
 
+  const handleNotifyNonWinners = async () => {
+    if (!selectedWinner || eligibleCustomers.length === 0) {
+      return;
+    }
+
+    setIsSendingAnnouncement(true);
+    setError("");
+
+    const results = await Promise.allSettled(
+      eligibleCustomers.map((customer) =>
+        sendDrawAnnouncementWhatsAppMessage(customer, selectedWinner)
+      )
+    );
+
+    const failedMessages = results.filter(
+      (result) => result.status === "rejected"
+    );
+
+    if (failedMessages.length) {
+      setError(
+        `${eligibleCustomers.length - failedMessages.length} announcement message(s) sent, ${failedMessages.length} failed.`
+      );
+    }
+
+    setIsSendingAnnouncement(false);
+  };
+
   return (
     <div className="space-y-6">
       <PageHero
@@ -137,9 +168,20 @@ const Winner = () => {
               <WinnerCard
                 winner={selectedWinner}
                 action={
-                  <button className="btn-primary mt-5" onClick={handleNotifyWinner}>
-                    Notify Winner On WhatsApp
-                  </button>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button className="btn-primary" onClick={handleNotifyWinner}>
+                      Notify Winner On WhatsApp
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={handleNotifyNonWinners}
+                      disabled={isSendingAnnouncement || eligibleCustomers.length === 0}
+                    >
+                      {isSendingAnnouncement
+                        ? "Sending Other Updates..."
+                        : "Notify Other Participants"}
+                    </button>
+                  </div>
                 }
               />
             </div>
