@@ -34,11 +34,11 @@ export async function sendCustomerWhatsAppMessage(customer) {
     to: `+91${customer.phoneNumber}`,
     templateParameters: [
       customer.customerName,
-      String(customer.couponCount),
+      String(customer.purchaseAmount),
       customer.couponNumbers.join(", "),
       customer.drawDate,
     ],
-    fallbackBody: `Hello ${customer.customerName},\n\nThank you for shopping with Pry's.\nYou have received ${customer.couponCount} lucky draw coupon${customer.couponCount > 1 ? "s" : ""}.\nCoupon Code${customer.couponCount > 1 ? "s" : ""}: ${customer.couponNumbers.join(", ")}\nDraw Date: ${customer.drawDate}\n\nPlease keep this coupon safe for the announcement.`,
+    fallbackBody: `Hello ${customer.customerName},\n\nThank you for your purchase of Rs. ${customer.purchaseAmount}.\nYour entry number for the draw is ${customer.couponNumbers.join(", ")}.\nThe draw will be held on ${customer.drawDate}.\nWe will notify you with the results.\n\nThank you for choosing us.`,
   });
 }
 
@@ -50,7 +50,8 @@ export async function sendWinnerWhatsAppMessage(winner) {
       winner.customerName,
       winner.couponNumber,
       winner.drawDate,
+      winner.prizeLabel || "the announced prize",
     ],
-    fallbackBody: `Congratulations ${winner.customerName}!\n\nYou are the lucky draw winner for Pry's.\nWinning Coupon: ${winner.couponNumber}\nDraw Date: ${winner.drawDate}\n\nOur team will contact you with the prize details.`,
+    fallbackBody: `Hello ${winner.customerName},\n\nYour entry ${winner.couponNumber} has been selected in the draw held on ${winner.drawDate}.\nYou are eligible to receive ${winner.prizeLabel || "the announced prize"}.\nOur team will contact you with further details.\nThank you for participating.`,
   });
 }
