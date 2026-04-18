@@ -22,14 +22,15 @@ const COUPONS_COLLECTION = "coupons";
 const WINNERS_COLLECTION = "winners";
 const SETTINGS_COLLECTION = "settings";
 const DRAW_SETTINGS_DOCUMENT = "drawControl";
-const BATCH_SETTINGS_DOCUMENT = "customerBatching";
+const COUPON_COUNTER_DOCUMENT = "couponCounter";
 const MIN_PURCHASE_AMOUNT = 2400;
 const CUSTOMERS_PER_BATCH = 150;
 
 const getCouponCount = (purchaseAmount) =>
   Math.floor(Number(purchaseAmount) / MIN_PURCHASE_AMOUNT);
 
-const createCouponNumber = (couponId) => `PRYS-${couponId.slice(0, 6).toUpperCase()}`;
+const createCouponNumber = (couponSerial) =>
+  `PRYS-${String(couponSerial).padStart(6, "0")}`;
 
 const mapSnapshotDocs = (snapshot) =>
   snapshot.docs.map((entry) => ({
@@ -40,36 +41,50 @@ const mapSnapshotDocs = (snapshot) =>
 const getDrawSettingsRef = () =>
   doc(db, SETTINGS_COLLECTION, DRAW_SETTINGS_DOCUMENT);
 
-const getBatchSettingsRef = () =>
-  doc(db, SETTINGS_COLLECTION, BATCH_SETTINGS_DOCUMENT);
+const getCouponCounterRef = () =>
+  doc(db, SETTINGS_COLLECTION, COUPON_COUNTER_DOCUMENT);
 
 const createBatchLabel = (batchNumber) => `Batch ${batchNumber}`;
 
-async function allocateCustomerBatch() {
+const getBatchNumberFromCouponSerial = (couponSerial) =>
+  Math.ceil(Number(couponSerial) / CUSTOMERS_PER_BATCH);
+
+const buildCouponBatchInfo = (couponSerials) => {
+  const batchNumbers = [...new Set(couponSerials.map(getBatchNumberFromCouponSerial))];
+  const batchLabels = batchNumbers.map((batchNumber) => createBatchLabel(batchNumber));
+
+  return {
+    batchNumbers,
+    batchLabels,
+    batchRangeLabel:
+      batchLabels.length === 1
+        ? batchLabels[0]
+        : `${batchLabels[0]} - ${batchLabels[batchLabels.length - 1]}`,
+  };
+};
+
+async function allocateCouponSerials(couponCount) {
   return runTransaction(db, async (transaction) => {
-    const batchSettingsRef = getBatchSettingsRef();
-    const batchSettingsSnapshot = await transaction.get(batchSettingsRef);
-    const lastCustomerSequence = batchSettingsSnapshot.exists()
-      ? Number(batchSettingsSnapshot.data().lastCustomerSequence || 0)
+    const couponCounterRef = getCouponCounterRef();
+    const couponCounterSnapshot = await transaction.get(couponCounterRef);
+    const lastCouponSerial = couponCounterSnapshot.exists()
+      ? Number(couponCounterSnapshot.data().lastCouponSerial || 0)
       : 0;
-    const customerSequence = lastCustomerSequence + 1;
-    const batchNumber = Math.ceil(customerSequence / CUSTOMERS_PER_BATCH);
-    const batchLabel = createBatchLabel(batchNumber);
+    const serials = Array.from(
+      { length: couponCount },
+      (_, index) => lastCouponSerial + index + 1
+    );
 
     transaction.set(
-      batchSettingsRef,
+      couponCounterRef,
       {
-        lastCustomerSequence: customerSequence,
+        lastCouponSerial: lastCouponSerial + couponCount,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
 
-    return {
-      customerSequence,
-      batchNumber,
-      batchLabel,
-    };
+    return serials;
   });
 }
 
@@ -94,11 +109,14 @@ export async function createCustomerEntry(payload) {
   }
 
   const customerRef = doc(collection(db, CUSTOMERS_COLLECTION));
-  const batchInfo = await allocateCustomerBatch();
+  const couponSerials = await allocateCouponSerials(couponCount);
+  const batchInfo = buildCouponBatchInfo(couponSerials);
   const couponRefs = Array.from({ length: couponCount }, () =>
     doc(collection(db, COUPONS_COLLECTION))
   );
-  const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
+  const couponNumbers = couponSerials.map((couponSerial) =>
+    createCouponNumber(couponSerial)
+  );
   const batch = writeBatch(db);
   const storeImageData = storeImageFile
     ? await uploadStoreImage(customerRef.id, storeImageFile)
@@ -110,9 +128,9 @@ export async function createCustomerEntry(payload) {
     purchaseAmount,
     couponCount,
     couponNumbers,
-    customerSequence: batchInfo.customerSequence,
-    batchNumber: batchInfo.batchNumber,
-    batchLabel: batchInfo.batchLabel,
+    batchNumbers: batchInfo.batchNumbers,
+    batchLabels: batchInfo.batchLabels,
+    batchRangeLabel: batchInfo.batchRangeLabel,
     winner: false,
     whatsappSent: false,
     createdAt: serverTimestamp(),
@@ -127,8 +145,8 @@ export async function createCustomerEntry(payload) {
       shopName: customerPayload.shopName,
       purchaseAmount,
       drawDate: customerPayload.drawDate,
-      batchNumber: batchInfo.batchNumber,
-      batchLabel: batchInfo.batchLabel,
+      batchNumber: getBatchNumberFromCouponSerial(couponSerials[index]),
+      batchLabel: createBatchLabel(getBatchNumberFromCouponSerial(couponSerials[index])),
       storeImageUrl: storeImageData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
@@ -183,11 +201,6 @@ export async function updateCustomerEntry(customerId, payload) {
   const existingCoupons = await fetchCustomerCoupons(customerId);
   const batch = writeBatch(db);
   let storeImageData = {};
-  const batchInfo = {
-    customerSequence: customerData.customerSequence || null,
-    batchNumber: customerData.batchNumber || 1,
-    batchLabel: customerData.batchLabel || createBatchLabel(customerData.batchNumber || 1),
-  };
 
   if (storeImageFile) {
     storeImageData = await uploadStoreImage(customerId, storeImageFile);
@@ -201,10 +214,14 @@ export async function updateCustomerEntry(customerId, payload) {
     batch.delete(doc(db, COUPONS_COLLECTION, coupon.id));
   });
 
+  const couponSerials = await allocateCouponSerials(couponCount);
+  const batchInfo = buildCouponBatchInfo(couponSerials);
   const couponRefs = Array.from({ length: couponCount }, () =>
     doc(collection(db, COUPONS_COLLECTION))
   );
-  const couponNumbers = couponRefs.map((couponRef) => createCouponNumber(couponRef.id));
+  const couponNumbers = couponSerials.map((couponSerial) =>
+    createCouponNumber(couponSerial)
+  );
 
   batch.update(customerRef, {
     ...customerPayload,
@@ -212,9 +229,9 @@ export async function updateCustomerEntry(customerId, payload) {
     purchaseAmount,
     couponCount,
     couponNumbers,
-    customerSequence: batchInfo.customerSequence,
-    batchNumber: batchInfo.batchNumber,
-    batchLabel: batchInfo.batchLabel,
+    batchNumbers: batchInfo.batchNumbers,
+    batchLabels: batchInfo.batchLabels,
+    batchRangeLabel: batchInfo.batchRangeLabel,
     updatedAt: serverTimestamp(),
   });
 
@@ -226,8 +243,8 @@ export async function updateCustomerEntry(customerId, payload) {
       shopName: customerPayload.shopName,
       purchaseAmount,
       drawDate: customerPayload.drawDate,
-      batchNumber: batchInfo.batchNumber,
-      batchLabel: batchInfo.batchLabel,
+      batchNumber: getBatchNumberFromCouponSerial(couponSerials[index]),
+      batchLabel: createBatchLabel(getBatchNumberFromCouponSerial(couponSerials[index])),
       storeImageUrl: storeImageData.storeImageUrl || customerData.storeImageUrl || null,
       couponNumber: couponNumbers[index],
       couponIndex: index + 1,
@@ -328,31 +345,58 @@ export async function fetchEligibleCustomers() {
 }
 
 export async function fetchEligibleCustomersByBatch(batchNumber = "") {
-  const customers = await fetchEligibleCustomers();
-
   if (!batchNumber) {
-    return customers;
+    return fetchEligibleCustomers();
   }
 
-  return customers.filter(
-    (customer) => String(customer.batchNumber || "") === String(batchNumber)
+  const [customers, eligibleCouponsSnapshot] = await Promise.all([
+    fetchEligibleCustomers(),
+    getDocs(
+      query(
+        collection(db, COUPONS_COLLECTION),
+        where("active", "==", true),
+        where("winner", "==", false)
+      )
+    ),
+  ]);
+
+  const eligibleCustomerIds = new Set(
+    mapSnapshotDocs(eligibleCouponsSnapshot)
+      .filter(
+        (coupon) => String(coupon.batchNumber || "") === String(batchNumber)
+      )
+      .map((coupon) => coupon.customerId)
   );
+
+  return customers
+    .filter((customer) => eligibleCustomerIds.has(customer.id))
+    .map((customer) => ({
+      ...customer,
+      batchNumber: Number(batchNumber),
+      batchLabel: createBatchLabel(batchNumber),
+    }));
 }
 
 export async function fetchEligibleBatches() {
-  const customers = await fetchEligibleCustomers();
+  const eligibleCouponsSnapshot = await getDocs(
+    query(
+      collection(db, COUPONS_COLLECTION),
+      where("active", "==", true),
+      where("winner", "==", false)
+    )
+  );
   const batchesMap = new Map();
 
-  customers.forEach((customer) => {
-    if (!customer.batchNumber) {
+  mapSnapshotDocs(eligibleCouponsSnapshot).forEach((coupon) => {
+    if (!coupon.batchNumber) {
       return;
     }
 
-    if (!batchesMap.has(customer.batchNumber)) {
-      batchesMap.set(customer.batchNumber, {
-        batchNumber: customer.batchNumber,
+    if (!batchesMap.has(coupon.batchNumber)) {
+      batchesMap.set(coupon.batchNumber, {
+        batchNumber: coupon.batchNumber,
         batchLabel:
-          customer.batchLabel || createBatchLabel(customer.batchNumber),
+          coupon.batchLabel || createBatchLabel(coupon.batchNumber),
       });
     }
   });
@@ -421,7 +465,8 @@ export async function pickLuckyDrawWinner(drawDate, selectedBatchNumber = "") {
     )
   );
 
-  const eligibleCoupons = mapSnapshotDocs(eligibleCouponsSnapshot).filter((coupon) =>
+  const allActiveCoupons = mapSnapshotDocs(eligibleCouponsSnapshot);
+  const eligibleCoupons = allActiveCoupons.filter((coupon) =>
     selectedBatchNumber
       ? String(coupon.batchNumber || "") === String(selectedBatchNumber)
       : true
@@ -454,7 +499,7 @@ export async function pickLuckyDrawWinner(drawDate, selectedBatchNumber = "") {
   const selectedCoupon =
     couponPool[Math.floor(Math.random() * couponPool.length)];
   const customerRef = doc(db, CUSTOMERS_COLLECTION, selectedCoupon.customerId);
-  const relatedCoupons = eligibleCoupons.filter(
+  const relatedCoupons = allActiveCoupons.filter(
     (coupon) => coupon.customerId === selectedCoupon.customerId
   );
   const winnerRef = doc(collection(db, WINNERS_COLLECTION));
